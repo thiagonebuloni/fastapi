@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Response, status, HTTPException, Depends, APIRouter
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from .. import models, schemas, oauth2
 from ..database import get_db
 from typing import List, Optional
@@ -7,7 +8,8 @@ from typing import List, Optional
 router = APIRouter(prefix="/posts", tags=["Posts"])
 
 
-@router.get("/", response_model=List[schemas.Post])
+# @router.get("/")
+@router.get("/", response_model=List[schemas.PostOut])
 def get_posts(
     db: Session = Depends(get_db),
     current_user: int = Depends(oauth2.get_current_user),
@@ -18,13 +20,24 @@ def get_posts(
     # cursor.execute("""SELECT * FROM posts """)
     # posts = cursor.fetchall()
 
+    # posts = (
+    #     db.query(models.Post)
+    #     .filter(models.Post.title.contains(search))
+    #     .limit(limit)
+    #     .offset(2)
+    #     .all()
+    # )
+
     posts = (
-        db.query(models.Post)
+        db.query(models.Post, func.count(models.Vote.post_id).label("votes"))
+        .join(models.Vote, models.Vote.post_id == models.Post.id, isouter=True)
+        .group_by(models.Post.id)
         .filter(models.Post.title.contains(search))
         .limit(limit)
-        .offset(2)
+        .offset(skip)
         .all()
     )
+
     return posts
 
 
@@ -57,7 +70,7 @@ def create_posts(
 #     return post
 
 
-@router.get("/{id}")
+@router.get("/{id}", response_model=schemas.PostOut)
 def get_post(
     id: int,
     db: Session = Depends(get_db),
@@ -66,7 +79,15 @@ def get_post(
     # cursor.execute("""SELECT * FROM posts WHERE id = %s """, (str(id),))
     # post = cursor.fetchone()
 
-    post = db.query(models.Post).filter(models.Post.id == id).first()
+    # post = db.query(models.Post).filter(models.Post.id == id).first()
+
+    post = (
+        db.query(models.Post, func.count(models.Vote.post_id).label("votes"))
+        .join(models.Vote, models.Vote.post_id == models.Post.id, isouter=True)
+        .group_by(models.Post.id)
+        .filter(models.Post.id == id)
+        .first()
+    )
 
     if not post:
         raise HTTPException(
